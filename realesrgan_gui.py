@@ -237,19 +237,14 @@ class RealESRGAN_GUI_Enhanced:
             font=ctk.CTkFont(size=12, weight="bold")
         ).pack(anchor="w", padx=15, pady=(10, 5))
         
-        self.scale_ratio = ctk.StringVar(value="4")
-        scale_combo = ctk.CTkComboBox(
+        self.scale_ratio = ctk.StringVar(value="4.0")
+        scale_combo = ctk.CTkEntry(
             scale_frame,
-            variable=self.scale_ratio,
-            values=["2", "3", "4"],
-            state='readonly',
+            textvariable=self.scale_ratio,
             corner_radius=8,
-            button_color=self.primary_color,
-            button_hover_color="#1557c0",
-            dropdown_fg_color="#2a2a2d",
-            dropdown_hover_color="#3a3a3d",
-            dropdown_text_color="white",
-            width=120
+            width=120,
+            height=32,
+            placeholder_text="例如: 2.0, 2.5, 4.0"
         )
         scale_combo.pack(fill="x", padx=15, pady=(0, 10))
         
@@ -724,14 +719,26 @@ class RealESRGAN_GUI_Enhanced:
                 src_width, src_height = img.size
 
             # 计算目标尺寸（根据用户选择的倍数）
-            scale_value = int(scale)
-            target_width = src_width * scale_value
-            target_height = src_height * scale_value
+            scale_value = float(scale)
+            target_width = int(src_width * scale_value)
+            target_height = int(src_height * scale_value)
 
             # 模型默认放大倍数
             model_factor = 4
+            if 'x2' in model.lower():
+                model_factor = 2
+            elif 'x3' in model.lower():
+                model_factor = 3
+            upscale_times = 1
             upscaled_width = src_width * model_factor
             upscaled_height = src_height * model_factor
+            
+            # 如果目标尺寸大于放大尺寸，需要多次放大
+            while upscaled_width < target_width or upscaled_height < target_height:
+                upscale_times += 1
+                upscaled_width *= model_factor
+                upscaled_height *= model_factor
+                
             # 构建命令行参数
             command = [
                 exe_path,
@@ -792,7 +799,7 @@ class RealESRGAN_GUI_Enhanced:
                 # 根据返回码判断成功或失败
                 if return_code == 0:
                     # 如果目标尺寸不等于模型输出尺寸，需要降采样
-                    if scale_value != model_factor:
+                    if upscaled_width != target_width or upscaled_height != target_height:
                         self.log(f"🔄 降采样: {upscaled_width}x{upscaled_height} → {target_width}x{target_height}")
                         
                         try:
