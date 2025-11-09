@@ -9,6 +9,7 @@ import re
 from PIL import Image
 import configparser
 
+
 class RealESRGAN_GUI_Enhanced:
     def __init__(self, master):
         self.master = master
@@ -566,9 +567,7 @@ class RealESRGAN_GUI_Enhanced:
 
                 ✨ TTA 模式:
                 • Test-Time Augmentation
-                • 通过多次推理提升质量
-                • 处理时间增加约8倍
-                • 适合对质量要求极高的场景"""
+                • 推理时间大量增加，质量提升微乎其微不建议开启"""
         
         info_text.insert("1.0", info_content)
         info_text.configure(state='disabled')
@@ -937,7 +936,7 @@ class RealESRGAN_GUI_Enhanced:
 if __name__ == '__main__':
     app = ctk.CTk()
     try:
-        app.iconbitmap("./icon/icon.ico") 
+        app.iconbitmap("../icon/icon.ico") 
     except Exception as e:
         print(f"设置图标失败: {e}")
     gui = RealESRGAN_GUI_Enhanced(app)
