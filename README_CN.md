@@ -27,6 +27,6 @@
 
 ### 🚀 使用方法
 
-1.  从 [发布](https://github.com/Clhikari/SaveRealESRGAN_GUI/releases/tag/latest) 页面下载本工具的 `.exe` 文件。
+1.  从 [发布](https://github.com/Clhikari/SaveRealESRGAN_GUI/releases/tag/latest) 页面下载本工具的 `.zip` 文件并解压。
 2.  从 [Real-ESRGAN 官方发布页面](https://github.com/xinntao/Real-ESRGAN/releases)下载 `source code`。
 4.  运行本工具，选择 `exe` 路径、选择图片、选择输出文件夹，然后开始处理。
