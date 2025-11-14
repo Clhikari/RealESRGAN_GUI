@@ -936,7 +936,7 @@ class RealESRGAN_GUI_Enhanced:
 if __name__ == '__main__':
     app = ctk.CTk()
     try:
-        app.iconbitmap("../icon/icon.ico") 
+        app.iconbitmap("./icon/icon.ico") 
     except Exception as e:
         print(f"设置图标失败: {e}")
     gui = RealESRGAN_GUI_Enhanced(app)
