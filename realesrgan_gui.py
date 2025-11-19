@@ -8,16 +8,17 @@ import tkinter as tk
 import re
 from PIL import Image
 import configparser
-
+import sys
 
 class RealESRGAN_GUI_Enhanced:
     def __init__(self, master):
         self.master = master
         self.config = configparser.ConfigParser()
         Image.MAX_IMAGE_PIXELS = None
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        self.settings_file = os.path.join(current_dir, 'config.ini')
-        self.icon_path = os.path.join(current_dir, 'icon', 'icon.ico')
+        
+        base_path = self.get_app_path()
+        self.settings_file = os.path.join(base_path, 'config.ini')
+        self.icon_path = os.path.join(base_path, 'icon', 'icon.ico')
         self.stop_event = False
         self.current_process = None
         # --- 外观设置 ---
@@ -586,6 +587,13 @@ class RealESRGAN_GUI_Enhanced:
         self.load_settings()
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+    def get_app_path(self):
+        if getattr(sys, 'frozen', False):
+            application_path = os.path.dirname(sys.executable)
+        else:
+            application_path = os.path.dirname(os.path.abspath(__file__))
+        
+        return application_path
 
     def stop_processing(self):
         """响应停止按钮点击"""
