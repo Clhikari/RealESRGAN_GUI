@@ -15,12 +15,16 @@ class RealESRGAN_GUI_Enhanced:
         self.master = master
         self.config = configparser.ConfigParser()
         Image.MAX_IMAGE_PIXELS = None
-        self.settings_file = './config.ini'
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        self.settings_file = os.path.join(current_dir, 'config.ini')
+        self.icon_path = os.path.join(current_dir, 'icon', 'icon.ico')
+        self.stop_event = False
+        self.current_process = None
         # --- 外观设置 ---
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
-        master.title("Real-ESRGAN 超分辨率工具")
+        master.title("Real-ESRGAN工具")
         master.geometry("750x750")
         master.resizable(True, True)
 
@@ -368,7 +372,15 @@ class RealESRGAN_GUI_Enhanced:
         
         control_inner = ctk.CTkFrame(control_card, fg_color="transparent")
         control_inner.pack(fill="x", padx=15, pady=(0, 15))
-        
+        self.stop_button = ctk.CTkButton(
+        control_inner,  # 替换为你实际的父容器变量名
+        text="⏹ 停止处理", 
+        fg_color="#D32F2F",  # 红色警示色
+        hover_color="#B71C1C",
+        state="disabled",    # 初始状态不可点
+        command=self.stop_processing
+        )
+        self.stop_button.pack(fill="x", pady=(10, 0)) # 根据你的布局调整
         self.start_button = ctk.CTkButton(
             control_inner,
             text="▶ 开始处理",
@@ -575,6 +587,21 @@ class RealESRGAN_GUI_Enhanced:
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
 
+    def stop_processing(self):
+        """响应停止按钮点击"""
+        if not self.is_processing:
+            return
+
+        self.log("🛑 正在尝试停止任务...")
+        self.stop_event = True
+        
+        if self.current_process:
+            try:
+                self.current_process.kill() # 强制终止进程
+                self.log("🛑 已强制终止当前子进程。")
+            except Exception as e:
+                self.log(f"⚠️ 终止进程时出错: {e}")
+
     def create_card(self, parent, title):
         """创建卡片容器"""
         card = ctk.CTkFrame(parent, fg_color=self.card_bg, corner_radius=15)
@@ -675,7 +702,8 @@ class RealESRGAN_GUI_Enhanced:
         gpu_id = self.gpu_id.get()
         thread_count = self.thread_count.get()
         enable_tta = self.enable_tta.get()
-        
+        self.stop_event = False  # 重置停止标志
+        self.is_processing = True
         if not all([os.path.isfile(exe_path), self.selected_files, os.path.isdir(output_dir)]):
             def _update_error():
                 self.status_label.configure(
@@ -685,11 +713,15 @@ class RealESRGAN_GUI_Enhanced:
                 self.start_button.configure(state="normal", text="▶ 开始处理")
             self.master.after(0, _update_error)
             return
-        
+        self.master.after(0, lambda: self.start_button.configure(state="disabled", text="⏳ 处理中..."))
+        self.master.after(0, lambda: self.stop_button.configure(state="normal")) # 启用停止按钮
         self.total_images = len(self.selected_files)
         success_count = 0
         
         for i, input_file_path in enumerate(self.selected_files):
+            if self.stop_event:
+                self.log("⚠️ 用户已取消后续任务。")
+                break
             self.current_image_index = i + 1
             filename = os.path.basename(input_file_path)
 
@@ -766,7 +798,7 @@ class RealESRGAN_GUI_Enhanced:
             
             try:
                 # 使用 Popen 启动子进程，并重定向输出流
-                process = subprocess.Popen(
+                self.current_process = subprocess.Popen(
                     command,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
@@ -777,7 +809,10 @@ class RealESRGAN_GUI_Enhanced:
                 )
 
                 # 实时读取并记录输出，同时解析百分比
-                for line in iter(process.stdout.readline, ''): # type: ignore
+                for line in iter(self.current_process.stdout.readline, ''): # type: ignore
+                    if self.stop_event:
+                        self.current_process.kill() # 确保进程被杀掉
+                        break 
                     if line:
                         stripped_line = line.strip()
                         self.log(stripped_line)
@@ -792,9 +827,12 @@ class RealESRGAN_GUI_Enhanced:
                                 pass
                 
                 # 等待进程结束并获取返回码
-                process.stdout.close() # type: ignore
-                return_code = process.wait()
-
+                self.current_process.stdout.close() # type: ignore
+                return_code = self.current_process.wait()
+                self.current_process = None
+                if self.stop_event:
+                    self.log(f"❌ 任务被中断: {filename}")
+                    break
                 # 根据返回码判断成功或失败
                 if return_code == 0:
                     # 如果目标尺寸不等于模型输出尺寸，需要降采样
@@ -828,6 +866,19 @@ class RealESRGAN_GUI_Enhanced:
             except Exception as e:
                 self.log(f"❌ 发生意外错误: {e}")
                 break
+            finally:
+                self.is_processing = False
+                self.current_process = None
+                
+                def _reset_ui():
+                    self.start_button.configure(state="normal", text="▶ 开始处理")
+                    self.stop_button.configure(state="disabled")
+                    if self.stop_event:
+                        self.status_label.configure(text="⛔ 任务已停止", text_color="orange")
+                    else:
+                        self.status_label.configure(text=f"✨ 全部完成! 成功: {success_count}/{self.total_images}", text_color="green")
+                
+                self.master.after(0, _reset_ui)
 
         # 处理完成
         def _update_completion():
@@ -926,7 +977,7 @@ class RealESRGAN_GUI_Enhanced:
             self.gpu_id.set(settings.get('gpu_id', ''))
             self.tile_size.set(settings.get('tile_size', ''))
             self.thread_count.set(settings.get('threads',''))
-            self.enable_tta.set(bool(settings.getboolean('taa', '')))
+            self.enable_tta.set(bool(settings.getboolean('tta', '')))
             self.update_quality_label(self.quality_value.get())
             self.log("⚙️ 设置已加载。")
         except Exception as e:
@@ -935,9 +986,10 @@ class RealESRGAN_GUI_Enhanced:
 
 if __name__ == '__main__':
     app = ctk.CTk()
+    gui = RealESRGAN_GUI_Enhanced(app)
+    icon_path = gui.icon_path
     try:
-        app.iconbitmap("./icon/icon.ico") 
+        app.iconbitmap(icon_path) 
     except Exception as e:
         print(f"设置图标失败: {e}")
-    gui = RealESRGAN_GUI_Enhanced(app)
     app.mainloop()
