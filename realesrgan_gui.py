@@ -4,11 +4,19 @@ import customtkinter as ctk
 import pywinstyles
 from tkinter import filedialog
 from threading import Thread
+from tkinterdnd2 import TkinterDnD, DND_FILES
 import tkinter as tk
 import re
 from PIL import Image
 import configparser
 import sys
+
+
+# 创建支持拖拽的窗口类
+class TkDnD(ctk.CTk, TkinterDnD.DnDWrapper):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.TkdndVersion = TkinterDnD._require(self)
 
 class RealESRGAN_GUI_Enhanced:
     def __init__(self, master):
@@ -317,7 +325,7 @@ class RealESRGAN_GUI_Enhanced:
         
         self.quality_slider = ctk.CTkSlider(
             quality_inner,
-            from_=60,
+            from_=10,
             to=100,
             number_of_steps=40,
             variable=self.quality_value,
@@ -339,6 +347,10 @@ class RealESRGAN_GUI_Enhanced:
         status_frame = ctk.CTkFrame(files_inner, fg_color="#2a2a2d", corner_radius=8, height=50)
         status_frame.pack(side="left", fill="x", expand=True, padx=(0, 10))
         status_frame.pack_propagate(False)
+        # 注册显示文件名的深色框
+        self._register_drag_drop(status_frame)
+        # 注册外层容器
+        self._register_drag_drop(files_inner)
         
         self.status_icon = ctk.CTkLabel(
             status_frame,
@@ -347,12 +359,18 @@ class RealESRGAN_GUI_Enhanced:
         )
         self.status_icon.pack(side="left", padx=15)
         
+        # 注册status_icon容器
+        self._register_drag_drop(self.status_icon)
+        
         self.files_label = ctk.CTkLabel(
             status_frame,
             textvariable=self.files_selected_status,
             font=ctk.CTkFont(size=13)
         )
         self.files_label.pack(side="left", fill="x", expand=True)
+        
+        # 注册lable容器
+        self._register_drag_drop(self.files_label)
         
         self.select_files_btn = ctk.CTkButton(
             files_inner,
@@ -365,6 +383,21 @@ class RealESRGAN_GUI_Enhanced:
             fg_color=self.primary_color,
             hover_color="#1557c0"
         )
+        self.select_files_btn.pack(side="left", padx=(0, 10))
+        
+        self.manage_btn = ctk.CTkButton(
+            files_inner,
+            text="📋",
+            command=self.open_file_manager,
+            corner_radius=8,
+            height=50,
+            width=50,
+            font=ctk.CTkFont(size=20),
+            fg_color="#3a3a3d",
+            hover_color="#4a4a4d"
+        )
+        
+        self.manage_btn.pack(side="left")
         self.select_files_btn.pack(side="left")
 
         # --- 处理控制卡片 ---
@@ -587,6 +620,31 @@ class RealESRGAN_GUI_Enhanced:
         self.load_settings()
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+    
+    def _register_drag_drop(self, widget):
+        """辅助函数：为 CTk 组件及其内部控件注册拖拽事件"""
+        try:
+            # 尝试直接注册（针对原生 tkinter 组件）
+            widget.drop_target_register(DND_FILES)
+            widget.dnd_bind('<<Drop>>', self.drop_files)
+        except AttributeError:
+            # 如果是 CTk 组件，尝试注册其内部的核心控件
+            if hasattr(widget, '_canvas'):
+                widget._canvas.drop_target_register(DND_FILES)
+                widget._canvas.dnd_bind('<<Drop>>', self.drop_files)
+            
+            # 注册内部 Label (CTkLabel, CTkButton 的文字部分)
+            if hasattr(widget, '_text_label'): # CTkButton 的文字
+                widget._text_label.drop_target_register(DND_FILES)
+                widget._text_label.dnd_bind('<<Drop>>', self.drop_files)
+            if hasattr(widget, '_label'): # CTkLabel 的核心
+                widget._label.drop_target_register(DND_FILES)
+                widget._label.dnd_bind('<<Drop>>', self.drop_files)
+            
+            # 递归注册所有子组件（防止拖到图标或文字上没反应）
+            for child in widget.winfo_children():
+                self._register_drag_drop(child)
+    
     def get_app_path(self):
         if getattr(sys, 'frozen', False):
             application_path = os.path.dirname(sys.executable)
@@ -637,11 +695,49 @@ class RealESRGAN_GUI_Enhanced:
             filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.webp")]
         )
         if files:
-            self.selected_files = files
-            self.files_selected_status.set(f"已选择 {len(files)} 个文件")
-            self.animate_icon_change()
-            self.log(f"✅ 已选择 { len(files)} 个图片文件")
+            current_files = list(self.selected_files) if isinstance(self.selected_files, (list, tuple)) else []
+            new_files = list(files)
+            for f in new_files:
+                if f not in current_files:
+                    current_files.append(f)
+            self.selected_files = current_files
+            self.update_file_status()
+            
+    def parse_dropped_files(self, data):
+        """解析拖拽进来的文件路径字符串（处理 Windows 路径的大括号问题）"""
+        filepaths = []
+        # 正则表达式匹配：要么是被 {} 包裹的内容，要么是无空格的字符串
+        import re
+        # 匹配 {C:/path with space/file.jpg} 或 C:/path/file.jpg
+        pattern = r'\{.*?\}|\S+'
+        matches = re.findall(pattern, data)
+        
+        for match in matches:
+            # 去除可能存在的大括号
+            path = match.strip('{}')
+            if os.path.isfile(path):
+                # 检查是否是图片格式
+                if path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp', '.tiff')):
+                    filepaths.append(path)
+        
+        return tuple(filepaths)
 
+    def drop_files(self, event):
+        """处理拖拽释放事件"""
+        files = self.parse_dropped_files(event.data)
+        
+        if files:
+            current_files = list(self.selected_files) if isinstance(self.selected_files, (list, tuple)) else []
+            new_files = list(files)
+            
+            for f in new_files:
+                if f not in current_files:
+                    current_files.append(f)
+            self.selected_files = current_files
+            self.update_file_status()
+        else:
+            self.log("⚠️ 拖拽的文件无效或不是支持的图片格式")
+    
     def update_quality_label(self, value):
         """更新质量滑块标签"""
         self.quality_label.configure(text=str(int(float(value))))
@@ -710,8 +806,13 @@ class RealESRGAN_GUI_Enhanced:
         gpu_id = self.gpu_id.get()
         thread_count = self.thread_count.get()
         enable_tta = self.enable_tta.get()
-        self.stop_event = False  # 重置停止标志
+        
+        # 获取压缩质量数值
+        quality_val = self.quality_value.get()
+
+        self.stop_event = False
         self.is_processing = True
+        
         if not all([os.path.isfile(exe_path), self.selected_files, os.path.isdir(output_dir)]):
             def _update_error():
                 self.status_label.configure(
@@ -721,8 +822,10 @@ class RealESRGAN_GUI_Enhanced:
                 self.start_button.configure(state="normal", text="▶ 开始处理")
             self.master.after(0, _update_error)
             return
+
         self.master.after(0, lambda: self.start_button.configure(state="disabled", text="⏳ 处理中..."))
-        self.master.after(0, lambda: self.stop_button.configure(state="normal")) # 启用停止按钮
+        self.master.after(0, lambda: self.stop_button.configure(state="normal"))
+        
         self.total_images = len(self.selected_files)
         success_count = 0
         
@@ -732,80 +835,66 @@ class RealESRGAN_GUI_Enhanced:
                 break
             self.current_image_index = i + 1
             filename = os.path.basename(input_file_path)
-
             base, ext = os.path.splitext(filename)
-            temp_output_path = os.path.join(output_dir, f"{base}{suffix}{ext}")
 
-            # 最终输出文件（可能转换格式）
+            # 定义一个临时的无损 PNG 路径供 EXE 输出使用
+            temp_png_filename = f"temp_{base}_{suffix}.png"
+            temp_output_path = os.path.join(output_dir, temp_png_filename)
+
+            # 定义最终输出路径
+            format_map = {
+                "保持原格式": ext,
+                "PNG": ".png",
+                "JPEG": ".jpg",
+                "WebP": ".webp",
+                "BMP": ".bmp",
+                "TIFF": ".tiff"
+            }
+            final_ext = format_map.get(output_format, ext)
+            # 如果保持原格式且原格式不是 jpg/webp 等，PIL save 时需要处理
             if output_format == "保持原格式":
-                final_output_path = temp_output_path
-                final_ext = ext
-            else:
-                format_map = {
-                    "PNG": ".png",
-                    "JPEG": ".jpg",
-                    "WebP": ".webp",
-                    "BMP": ".bmp",
-                    "TIFF": ".tiff"
-                }
-                final_ext = format_map.get(output_format, ext)
-                final_output_path = os.path.join(output_dir, f"{base}{suffix}{final_ext}")
-                
+                # 简单处理：如果原图是 jpg，最终也是 jpg
+                pass 
+            
+            final_output_path = os.path.join(output_dir, f"{base}{suffix}{final_ext}")
             output_filename = os.path.basename(final_output_path)
 
-            # 读取原图尺寸
-            with Image.open(input_file_path) as img:
-                src_width, src_height = img.size
+            # --- 计算尺寸 ---
+            try:
+                with Image.open(input_file_path) as img:
+                    src_width, src_height = img.size
+            except Exception as e:
+                self.log(f"❌ 无法读取原图尺寸: {e}")
+                continue
 
-            # 计算目标尺寸（根据用户选择的倍数）
             scale_value = float(scale)
             target_width = int(src_width * scale_value)
             target_height = int(src_height * scale_value)
 
-            # 模型默认放大倍数
-            model_factor = 4
-            if 'x2' in model.lower():
-                model_factor = 2
-            elif 'x3' in model.lower():
-                model_factor = 3
-            upscale_times = 1
-            upscaled_width = src_width * model_factor
-            upscaled_height = src_height * model_factor
-            
-            # 如果目标尺寸大于放大尺寸，需要多次放大
-            while upscaled_width < target_width or upscaled_height < target_height:
-                upscale_times += 1
-                upscaled_width *= model_factor
-                upscaled_height *= model_factor
-                
-            # 构建命令行参数
+            # --- 构建命令 ---
+            # 强制输出为 temp_output_path (PNG)
             command = [
                 exe_path,
                 '-i', input_file_path,
-                '-o', final_output_path,
+                '-o', temp_output_path,
                 '-n', model,
+                '-f', 'png' # 强制 EXE 输出 PNG 格式以保真
             ]
             
-            # 添加可选参数
             if tile_size and tile_size != "0":
                 command.extend(['-t', tile_size])
-            
             if gpu_id and gpu_id.lower() != "auto":
                 command.extend(['-g', gpu_id])
-            
             if thread_count and thread_count != "1:2:2":
                 command.extend(['-j', thread_count])
-            
             if enable_tta:
                 command.append('-x')
-            
-            # 添加详细输出
             command.append('-v')
             
-            self.log(f"\n{'='*60}\n▶ 开始处理: {filename}\n💻 命令: {' '.join(command)}\n{'='*60}")
+            self.log(f"\n{'='*60}\n▶ 开始处理: {filename}\n{'='*60}")
             
             try:
-                # 使用 Popen 启动子进程，并重定向输出流
+                # --- 执行子进程 ---
                 self.current_process = subprocess.Popen(
                     command,
                     stdout=subprocess.PIPE,
@@ -816,16 +905,13 @@ class RealESRGAN_GUI_Enhanced:
                     creationflags=subprocess.CREATE_NO_WINDOW
                 )
 
-                # 实时读取并记录输出，同时解析百分比
-                for line in iter(self.current_process.stdout.readline, ''): # type: ignore
+                for line in iter(self.current_process.stdout.readline, ''):
                     if self.stop_event:
-                        self.current_process.kill() # 确保进程被杀掉
+                        self.current_process.kill()
                         break 
                     if line:
                         stripped_line = line.strip()
                         self.log(stripped_line)
-                        
-                        # 尝试从输出中提取百分比（匹配如 "98.61%" 的模式）
                         percentage_match = re.search(r'(\d+\.?\d*)%', stripped_line)
                         if percentage_match:
                             try:
@@ -834,42 +920,69 @@ class RealESRGAN_GUI_Enhanced:
                             except ValueError:
                                 pass
                 
-                # 等待进程结束并获取返回码
-                self.current_process.stdout.close() # type: ignore
+                self.current_process.stdout.close()
                 return_code = self.current_process.wait()
                 self.current_process = None
-                if self.stop_event:
-                    self.log(f"❌ 任务被中断: {filename}")
-                    break
-                # 根据返回码判断成功或失败
-                if return_code == 0:
-                    # 如果目标尺寸不等于模型输出尺寸，需要降采样
-                    if upscaled_width != target_width or upscaled_height != target_height:
-                        self.log(f"🔄 降采样: {upscaled_width}x{upscaled_height} → {target_width}x{target_height}")
-                        
-                        try:
-                            with Image.open(final_output_path) as img:
-                                # 使用高质量的 Lanczos 算法降采样
-                                resized = img.resize(
-                                    (target_width, target_height), 
-                                    Image.Resampling.LANCZOS
-                                )
-                                resized.save(final_output_path)
-                                
-                        except Exception as e:
-                            self.log(f"❌ 降采样失败: {e}")
-                            continue
-                    else:
-                        # 尺寸相同，直接重命名
-                        if temp_output_path != final_output_path:
-                            os.rename(temp_output_path, final_output_path)
-                    
-                    self.log(f"✅ 成功: {filename} 已保存为 {output_filename}")
-                    success_count += 1
 
+                if self.stop_event:
+                    break
+
+                if return_code == 0 and os.path.exists(temp_output_path):
+                    # --- 后处理 (Resize, 格式转换, 压缩) ---
+                    self.log(f"⚙️ 正在进行后期处理与压缩 (质量: {quality_val})...")
+                    
+                    try:
+                        with Image.open(temp_output_path) as img:
+                            # 1. 处理 Resize (如果需要)
+                            if img.width != target_width or img.height != target_height:
+                                self.log(f"🔄 调整尺寸: {img.width}x{img.height} → {target_width}x{target_height}")
+                                img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                            
+                            # 2. 准备保存参数
+                            save_kwargs = {}
+                            
+                            # 确定保存格式字符串 (PIL 需要 'JPEG' 而不是 '.jpg')
+                            pil_format = None
+                            ext_lower = final_ext.lower()
+                            
+                            if '.jpg' in ext_lower or '.jpeg' in ext_lower:
+                                pil_format = 'JPEG'
+                                save_kwargs['quality'] = quality_val # 应用质量参数
+                                if img.mode == 'RGBA':
+                                    img = img.convert('RGB') # JPEG 不支持透明通道
+                                    
+                            elif '.webp' in ext_lower:
+                                pil_format = 'WEBP'
+                                save_kwargs['quality'] = quality_val # 应用质量参数
+                                
+                            elif '.png' in ext_lower:
+                                pil_format = 'PNG'
+                                
+                            elif '.bmp' in ext_lower:
+                                pil_format = 'BMP'
+                            elif '.tiff' in ext_lower:
+                                pil_format = 'TIFF'
+
+                            # 3. 保存最终文件
+                            img.save(final_output_path, format=pil_format, **save_kwargs)
+                            
+                        success_count += 1
+                        self.log(f"✅ 成功: 已保存为 {output_filename}")
+
+                    except Exception as e:
+                        self.log(f"❌ 后期处理失败: {e}")
+                    finally:
+                        # 清理临时文件
+                        if os.path.exists(temp_output_path):
+                            try:
+                                os.remove(temp_output_path)
+                            except:
+                                pass
+                else:
+                    self.log(f"❌ 处理失败或未生成临时文件")
 
             except FileNotFoundError:
-                self.log(f"❌ 致命错误: 未找到可执行文件 '{exe_path}'。请检查路径。")
+                self.log(f"❌ 致命错误: 未找到可执行文件 '{exe_path}'")
                 break
             except Exception as e:
                 self.log(f"❌ 发生意外错误: {e}")
@@ -885,15 +998,10 @@ class RealESRGAN_GUI_Enhanced:
                         self.status_label.configure(text="⛔ 任务已停止", text_color="orange")
                     else:
                         self.status_label.configure(text=f"✨ 全部完成! 成功: {success_count}/{self.total_images}", text_color="green")
-                
                 self.master.after(0, _reset_ui)
 
-        # 处理完成
         def _update_completion():
-            self.status_label.configure(
-                text=f"✨ 处理完成！成功: {success_count}/{self.total_images}",
-                text_color=self.success_color
-            )
+            self.status_label.configure(text=f"✨ 处理完成！成功: {success_count}/{self.total_images}", text_color=self.success_color)
             self.start_button.configure(state="normal", text="▶ 开始处理")
             self.progress.set(1.0)
         self.master.after(0, _update_completion)
@@ -902,19 +1010,114 @@ class RealESRGAN_GUI_Enhanced:
         self.log(f"\n{'='*60}\n🎉 批量处理完成！\n✅ 成功: {success_count}/{self.total_images}\n{'='*60}")
     
     # === 动画效果函数 ===
-    
-    def animate_icon_change(self):
-        """图标切换动画 - 淡入淡出效果"""
-        icons = ["⚪", "🔵", "✅"]
-        colors = ["white", "#1f6feb", "#2ea043"]
+    def update_file_status(self):
+        """辅助函数：更新主界面的文件数量提示"""
+        count = len(self.selected_files)
+        if count == 0:
+            self.files_selected_status.set("未选择任何文件 (支持拖拽)")
+            self.status_icon.configure(text="⚪")
+        else:
+            self.files_selected_status.set(f"已选择 {count} 个文件")
+            self.status_icon.configure(text="✅")
+            self.log(f"📂 当前文件列表共 {count} 个文件")
+
+    def open_file_manager(self):
+        """打开文件管理弹窗"""
+        if not self.selected_files:
+            self.log("⚠️ 列表为空，无需管理")
+            return
+
+        # 创建弹窗
+        top = ctk.CTkToplevel(self.master)
+        top.title("文件列表管理")
+        top.geometry("500x400")
+        top.transient(self.master) # 设置为工具窗口
+        top.grab_set() # 模态窗口（禁止操作主窗口直到关闭此窗口）
         
-        def transition(step=0):
-            if step < len(icons):
-                self.status_icon.configure(text=icons[step])
-                self.files_label.configure(text_color=colors[step])
-                self.master.after(80, lambda: transition(step + 1))
+        # 标题栏
+        header = ctk.CTkFrame(top, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=10)
         
-        transition()
+        ctk.CTkLabel(header, text=f"已选文件 ({len(self.selected_files)})", font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
+        
+        ctk.CTkButton(
+            header, text="清空全部", width=80, height=30, 
+            fg_color=self.error_color, hover_color="#c62828",
+            command=lambda: [self.selected_files.clear(), self.update_file_status(), top.destroy()]
+        ).pack(side="right")
+
+        # 滚动列表区域
+        scroll_frame = ctk.CTkScrollableFrame(top)
+        scroll_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        # 渲染列表
+        self.render_file_list(scroll_frame, top)
+
+    def truncate_filename(self, filename, max_length=35):
+        """
+        辅助函数：如果文件名太长，保留头尾，中间用 ... 代替
+        例如: 20251019_very_long_name_upscaled.jpg -> 20251019...upscaled.jpg
+        """
+        if len(filename) <= max_length:
+            return filename
+        
+        # 保留前15个字符，保留后15个字符（包含后缀）
+        head = 15
+        tail = 15
+        return filename[:head] + "..." + filename[-tail:]
+
+    def render_file_list(self, parent_frame, top_window):
+        """渲染文件列表项（修复布局问题）"""
+        # 清空现有显示
+        for widget in parent_frame.winfo_children():
+            widget.destroy()
+
+        for i, file_path in enumerate(self.selected_files):
+            # 创建每一行的容器
+            row = ctk.CTkFrame(parent_frame, fg_color="#2b2b2b")
+            row.pack(fill="x", pady=2)
+            
+            del_btn = ctk.CTkButton(
+                row, 
+                text="❌", 
+                width=30, 
+                height=30,
+                fg_color="transparent", 
+                hover_color="#404040", 
+                text_color="#ff5555",
+                command=lambda f=file_path: self.remove_file(f, parent_frame, top_window)
+            )
+            del_btn.pack(side="right", padx=5)
+
+            # 处理长文件名
+            filename = os.path.basename(file_path)
+            display_name = self.truncate_filename(filename)
+
+            label = ctk.CTkLabel(
+                row, 
+                text=f"{i+1}. {display_name}", 
+                anchor="w"
+            )
+            label.pack(side="left", padx=10, pady=5, fill="x", expand=True)
+
+    def remove_file(self, file_path, parent_frame, top_window):
+        """从列表中移除指定文件"""
+        if file_path in self.selected_files:
+            self.selected_files.remove(file_path)
+            self.update_file_status()
+            
+            # 如果删完了，直接关闭窗口
+            if not self.selected_files:
+                top_window.destroy()
+            else:
+                # 重新渲染列表
+                self.render_file_list(parent_frame, top_window)
+                # 更新窗口标题数量
+                for widget in top_window.winfo_children():
+                    if isinstance(widget, ctk.CTkFrame):
+                        for child in widget.winfo_children():
+                            if isinstance(child, ctk.CTkLabel):
+                                child.configure(text=f"已选文件 ({len(self.selected_files)})")
     
     def animate_button_click(self):
         """按钮点击动画 - 缩放效果"""
@@ -993,7 +1196,7 @@ class RealESRGAN_GUI_Enhanced:
 
 
 if __name__ == '__main__':
-    app = ctk.CTk()
+    app = TkDnD()
     gui = RealESRGAN_GUI_Enhanced(app)
     icon_path = gui.icon_path
     try:
