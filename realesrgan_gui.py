@@ -1198,9 +1198,4 @@ class RealESRGAN_GUI_Enhanced:
 if __name__ == '__main__':
     app = TkDnD()
     gui = RealESRGAN_GUI_Enhanced(app)
-    icon_path = gui.icon_path
-    try:
-        app.iconbitmap(icon_path) 
-    except Exception as e:
-        print(f"设置图标失败: {e}")
     app.mainloop()
