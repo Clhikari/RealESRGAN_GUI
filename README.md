@@ -28,7 +28,7 @@ This is a very minimalistic tool. In other aspects, it not be as feature-rich as
 
 ### 🚀 Usage
 
-1.  Download the `.zip` and unzip from this project's [Release](https://github.com/Clhikari/SaveRealESRGAN_GUI/releases/tag/latest) page.
+1.  Download the `.exe` from this project's [Release](https://github.com/Clhikari/RealESRGAN_GUI/releases/tag/1.2.0) page.
 2.  Download `source code` from the official [Real-ESRGAN Releases](https://github.com/xinntao/Real-ESRGAN/releases) page.
 3.  **Recommendation**: Place both `.exe` files in the same folder.
 4.  Run the tool, select the path to the `.exe`, select your images, choose an output folder, and start processing.
