@@ -26,7 +26,6 @@ class RealESRGAN_GUI_Enhanced:
         
         base_path = self.get_app_path()
         self.settings_file = os.path.join(base_path, 'config.ini')
-        self.icon_path = os.path.join(base_path, 'icon', 'icon.ico')
         self.stop_event = False
         self.current_process = None
         # --- 外观设置 ---
