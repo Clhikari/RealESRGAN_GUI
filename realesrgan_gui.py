@@ -40,7 +40,7 @@ class RealESRGAN_GUI_Enhanced:
         try:
             pywinstyles.apply_style(master, style="mica")
         except Exception as e:
-            print(f"应用窗口特效失败: {e}")
+            self.log(f"应用窗口特效失败: {e}")
 
         self.selected_files = []
         
