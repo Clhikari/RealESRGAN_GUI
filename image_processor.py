@@ -103,6 +103,15 @@ class ImageProcessor:
             params["exe_path"], input_file, temp_output_path, params
         )
 
+        # 如果放大为1直接跳转到转格式阶段
+        if src_width == target_width and src_height == target_height:
+            self.log(f"检测到放大倍数为1")
+            self._post_process(
+                input_file, final_output, target_width, target_height, params
+            )
+            self.log(f"✅ 成功: 已保存为 {os.path.basename(final_output)}")
+            return True
+
         self.log(f"\n{'='*60}\n▶ 开始处理: {filename}\n{'='*60}")
 
         try:
