@@ -107,21 +107,17 @@ class UIBuilder:
     @staticmethod
     def create_slider_with_label(parent, variable, from_, to, command, label_var=None):
         """创建带数值显示的滑块"""
+
         inner = ctk.CTkFrame(parent, fg_color="transparent")
         inner.pack(fill="x", padx=15, pady=(0, 10))
-
-        if label_var is None:
-            label_var = ctk.IntVar(value=variable.get())
-
         label = ctk.CTkLabel(
             inner,
-            textvariable=label_var,
+            text=str(int(variable.get())),
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=UIBuilder.PRIMARY_COLOR,
             width=30,
         )
         label.pack(side="right", padx=(5, 0))
-
         slider = ctk.CTkSlider(
             inner,
             from_=from_,
@@ -134,7 +130,6 @@ class UIBuilder:
             progress_color=UIBuilder.PRIMARY_COLOR,
         )
         slider.pack(side="left", fill="x", expand=True)
-
         return slider, label
 
     @staticmethod
